@@ -297,7 +297,7 @@ def get_model():
     genai.configure(api_key=key)
     # ✅ Using gemini-2.0-flash (current stable fast model)
     # Note: gemini-3.1-flash-lite is not publicly available yet
-    return genai.GenerativeModel('gemini-2.0-flash')
+    return genai.GenerativeModel('gemini-3.1-flash-lite')
 
 def call_gemini(model, prompt, max_tokens=2000):
     for attempt in range(2):
