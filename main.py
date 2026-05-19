@@ -389,15 +389,20 @@ def generate_image(prompt_text, platform):
     return None
 
 # ════════════════════════════════════════════════════════════
-# MAIN PAGE
+# MAIN PAGE (FIXED STATE MANAGEMENT)
 # ════════════════════════════════════════════════════════════
 
 def main():
+    # Initialize session state for inputs to survive refresh
+    if 'cm_title' not in st.session_state: st.session_state['cm_title'] = ""
+    if 'cm_script' not in st.session_state: st.session_state['cm_script'] = ""
+    if 'generated_results' not in st.session_state: st.session_state['generated_results'] = None
+
     st.markdown("""
     <h1 style='font-size:1.8rem;margin-bottom:0.25rem;'>📱 Content Multiplier</h1>
     <p style='color:#6b7280;font-size:0.9rem;margin-bottom:0.5rem;'>One YouTube video → Reddit · LinkedIn · Instagram · TikTok · Twitter. All platform-optimized.</p>
     <div style='background:rgba(0,102,255,0.1);border:1px solid rgba(0,102,255,0.3);border-radius:8px;padding:0.6rem 1rem;margin-bottom:2rem;font-size:0.78rem;color:#60a5fa;'>
-        🔒 <b>Anonymous mode ON</b> — All content uses AlgoQuant brand. No personal info revealed. Post from brand accounts only.
+        🔒 <b>Anonymous mode ON</b> — All content uses AlgoQuant brand. No personal info revealed.
     </div>
     """, unsafe_allow_html=True)
 
@@ -408,7 +413,7 @@ def main():
     section("Your YouTube Video")
     col1, col2 = st.columns([2,1])
     with col1:
-        yt_title = st.text_input("Video title", placeholder="I Turned $10k Into $26k (Then Lost It All)", key="cm_title")
+        yt_title = st.text_input("Video title", value=st.session_state['cm_title'], placeholder="I Turned $10k Into $26k (Then Lost It All)", key="cm_title")
     with col2:
         recent = st.selectbox("Or pick recent", [
             "Select...",
@@ -418,10 +423,11 @@ def main():
             "I Backtested the Triple EMA: It's a Trap",
         ], key="cm_recent")
         if recent != "Select..." and not yt_title:
+            st.session_state['cm_title'] = recent
             yt_title = recent
 
-    yt_script = st.text_area("Paste script or description (first 500 words enough)", height=120,
-        placeholder="Paste from Video Factory script output...", key="cm_script")
+    yt_script = st.text_area("Paste script or description (first 500 words enough)", 
+        value=st.session_state['cm_script'], height=120, placeholder="Paste from Video Factory...", key="cm_script")
 
     section("Select Platforms")
     col_r,col_l,col_i,col_t,col_x = st.columns(5)
@@ -441,23 +447,36 @@ def main():
             st.markdown(f"<div style='font-size:0.68rem;color:#6b7280;'>{desc}</div>", unsafe_allow_html=True)
 
     col_s, col_t2 = st.columns(2)
-    with col_s: style = st.selectbox("Image style", ["dark minimal","dark dramatic","green success","red warning","data clean"])
-    with col_t2: tone = st.selectbox("Tone", ["honest failure (recommended)","technical","results","educational"])
+    with col_s: style = st.selectbox("Image style", ["dark minimal","dark dramatic","green success","red warning","data clean"], key="img_style")
+    with col_t2: tone = st.selectbox("Tone", ["honest failure (recommended)","technical","results","educational"], key="tone_select")
 
-    if not platforms:
-        st.warning("Select at least one platform.")
-        return
+    # Main Generation Button
+    if st.button(f"⚡  Generate for {len(platforms)} Platform{'s' if len(platforms)>1 else ''}", use_container_width=True, key="main_gen_btn"):
+        if not yt_title.strip() or not yt_script.strip():
+            st.error("Please enter a title and script first.")
+        elif not platforms:
+            st.warning("Select at least one platform.")
+        else:
+            model = get_model()
+            ctx   = build_context()
+            with st.spinner(f"Generating content for {', '.join(platforms)}..."):
+                try:
+                    # Generate content
+                    results = ai_content_multiplier(model, yt_title, yt_script, platforms, ctx)
+                    # Save to session state so it survives refresh
+                    st.session_state['generated_results'] = results
+                    st.session_state['last_platforms'] = platforms
+                    st.rerun() # Force refresh to show results cleanly
+                except Exception as e:
+                    st.error(str(e))
 
-    if st.button(f"⚡  Generate for {len(platforms)} Platform{'s' if len(platforms)>1 else ''}", use_container_width=True) and yt_title.strip():
-        model = get_model()
-        ctx   = build_context()
-
-        with st.spinner(f"Generating for {', '.join(p.title() for p in platforms)}..."):
-            try: results = ai_content_multiplier(model, yt_title, yt_script, platforms, ctx)
-            except Exception as e: st.error(str(e)); return
-
+    # Display Results (Loaded from Session State)
+    if st.session_state.get('generated_results'):
+        results = st.session_state['generated_results']
+        platforms = st.session_state.get('last_platforms', [])
+        
         st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-        st.markdown(f"<div style='background:rgba(0,229,160,0.05);border:1px solid rgba(0,229,160,0.2);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1.5rem;'><span style='color:#00e5a0;font-weight:700;'>✅ Content ready for {len(platforms)} platforms</span><span style='color:#6b7280;font-size:0.78rem;margin-left:1rem;'>Copy and post from your AlgoQuant brand accounts</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background:rgba(0,229,160,0.05);border:1px solid rgba(0,229,160,0.2);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1.5rem;'><span style='color:#00e5a0;font-weight:700;'>✅ Content Ready</span></div>", unsafe_allow_html=True)
 
         ICONS   = {'reddit':'🟠','linkedin':'🔵','instagram':'🟣','tiktok':'⚫','twitter':'🐦'}
         COLORS  = {'reddit':'#FF4500','linkedin':'#0077B5','instagram':'#E1306C','tiktok':'#00f2ea','twitter':'#1DA1F2'}
@@ -476,47 +495,45 @@ def main():
                 <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;'>
                     <div style='display:flex;align-items:center;gap:0.5rem;'>
                         <span style='font-size:1.2rem;'>{icon}</span>
-                        <span style='font-size:0.9rem;font-weight:700;color:{color};text-transform:uppercase;letter-spacing:0.05em;'>{platform}</span>
+                        <span style='font-size:0.9rem;font-weight:700;color:{color};text-transform:uppercase;'>{platform}</span>
                     </div>
-                    <div style='display:flex;gap:0.75rem;font-size:0.72rem;color:#6b7280;'>
-                        <span>📍 {target_c}</span>
-                        <span>🕐 {best_time}</span>
-                        <span>📝 {char_count} chars</span>
-                    </div>
+                    <div style='font-size:0.72rem;color:#6b7280;'>📍 {target_c} · 🕐 {best_time}</div>
                 </div>
             </div>""", unsafe_allow_html=True)
 
-            st.text_area(f"{platform.title()} post — copy this",
-                value=post_text,
-                height=200 if platform in ['reddit','twitter'] else 150,
-                key=f"post_{platform}", label_visibility='collapsed')
+            st.text_area(f"{platform.title()} post — copy this", value=post_text, height=200 if platform in ['reddit','twitter'] else 150, key=f"post_{platform}", label_visibility='collapsed')
 
+            # Image Brief Logic
             col_img, _ = st.columns([1,2])
             with col_img:
-                if st.button(f"🖼️  Image brief", key=f"img_{platform}"):
-                    with st.spinner("Generating brief..."):
+                if st.button(f"🖼️  Image Brief", key=f"img_btn_{platform}"):
+                    model = get_model()
+                    ctx = build_context()
+                    title = st.session_state.get('cm_title', 'Trading Strategy')
+                    style = st.session_state.get('img_style', 'dark minimal')
+                    with st.spinner(f"Generating {platform} brief..."):
                         try:
-                            ib = ai_image_brief(model, yt_title, platform, style, ctx)
+                            ib = ai_image_brief(model, title, platform, style, ctx)
                             st.session_state[f'ib_{platform}'] = ib
+                            st.rerun()
                         except Exception as e: st.error(str(e))
 
+            # Show Brief if exists
             if f'ib_{platform}' in st.session_state:
                 ib = st.session_state[f'ib_{platform}']
                 c_html = ''.join([f"<span style='display:inline-block;width:18px;height:18px;border-radius:3px;background:{c};margin-right:3px;vertical-align:middle;'></span>" for c in ib.get('color_palette',[])])
                 st.markdown(f"""
                 <div style='background:#0d1117;border:1px solid {color};border-radius:8px;padding:1rem;margin-top:0.5rem;margin-bottom:0.75rem;'>
-                    <div style='font-size:0.72rem;color:{color};font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;'>Image Brief — {platform.title()} {ib.get('dimensions','')}</div>
+                    <div style='font-size:0.72rem;color:{color};font-weight:700;text-transform:uppercase;margin-bottom:8px;'>Image Brief — {platform.title()} {ib.get('dimensions','')}</div>
                     <div style='font-size:0.85rem;font-weight:600;margin-bottom:4px;'>"{ib.get('main_text','')}"</div>
                     {f"<div style='font-size:0.75rem;color:#6b7280;margin-bottom:4px;'>Sub: {ib.get('sub_text','')}</div>" if ib.get('sub_text') else ''}
-                    <div style='font-size:0.75rem;color:#9ca3af;margin-bottom:6px;'>{ib.get('concept','')}</div>
                     <div style='margin-bottom:8px;'>{c_html}</div>
                     <div style='font-size:0.75rem;font-weight:600;margin-bottom:4px;'>Canva steps:</div>
                     <div style='font-size:0.72rem;color:#9ca3af;line-height:1.6;'>{ib.get('canva_steps','')}</div>
-                    <div style='font-size:0.72rem;color:#ffd700;margin-top:8px;'>Engagement: {ib.get('predicted_engagement','')}</div>
                 </div>""", unsafe_allow_html=True)
 
-                if st.button(f"🎨  Generate image (free AI)", key=f"gen_{platform}"):
-                    img_prompt = ib.get('ai_image_prompt', f"professional trading dark background {yt_title}")
+                if st.button(f"🎨  Generate Image (Free AI)", key=f"gen_btn_{platform}"):
+                    img_prompt = ib.get('ai_image_prompt', f"professional trading dark background {st.session_state.get('cm_title')}")
                     with st.spinner("Generating via Pollinations AI..."):
                         try:
                             encoded = requests.utils.quote(img_prompt[:500])
@@ -531,12 +548,12 @@ def main():
                             else: st.error("Failed. Build manually in Canva using brief above.")
                         except Exception as e: st.error(str(e))
 
-            st.markdown("<div style='margin-bottom:0.75rem;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-bottom:1.5rem;'></div>", unsafe_allow_html=True)
 
         # Save to DB
         db_save('content_posts', {'user_id':user_id,'title':yt_title,'platforms':json.dumps(platforms),'content':json.dumps(results),'status':'generated'}, user_id)
 
-        # Posting schedule
+        # Schedule & Checklist
         st.markdown("<hr class='divider'>", unsafe_allow_html=True)
         section("Recommended Posting Schedule")
         schedule = [
@@ -545,30 +562,23 @@ def main():
             ("Wednesday", "🔵 LinkedIn",   "Professional narrative — best B2B day"),
             ("Thursday",  "🟣 Instagram",  "Image post — Thursday 6pm EST is peak"),
             ("Friday",    "⚫ TikTok",     "Upload short video with generated script"),
-            ("Saturday",  "🟣 Instagram",  "Stories version — behind the scenes"),
-            ("Sunday",    "🟠 Reddit",     "Reply to Tuesday comments — builds rep"),
         ]
         for day, plat_, action in schedule:
             st.markdown(f"<div style='display:flex;align-items:center;gap:1rem;padding:0.5rem 0;border-bottom:1px solid var(--border);'><span style='font-size:0.78rem;font-weight:600;color:#6b7280;min-width:80px;'>{day}</span><span style='font-size:0.78rem;font-weight:600;min-width:110px;'>{plat_}</span><span style='font-size:0.78rem;color:#9ca3af;'>{action}</span></div>", unsafe_allow_html=True)
 
-        # Anonymous checklist
         st.markdown("""
         <div style='background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.3);border-radius:10px;padding:1rem 1.25rem;margin-top:1.5rem;'>
             <div style='font-size:0.82rem;font-weight:700;color:#ff6b35;margin-bottom:8px;'>🔒 Anonymous Posting Checklist</div>
             <div style='font-size:0.75rem;color:#9ca3af;line-height:1.9;'>
                 ✅ Post from algoquant.trading@gmail.com accounts only<br>
                 ✅ AlgoQuant logo as profile picture on all platforms<br>
-                ✅ Separate browser profile from personal accounts<br>
                 ✅ Location blank or United States everywhere<br>
-                ✅ Never mention Morocco real name or personal details<br>
+                ✅ Never mention Morocco or personal details<br>
                 ✅ Bio: "Algorithmic trading · Python · MQL5 · FTMO"<br>
                 ✅ Link in bio → YouTube channel only
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-def section(title):
-    st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
 # LAUNCH
