@@ -1,7 +1,8 @@
 """
-AlgoQuant Content Multiplier v1.0 — Standalone SaaS
-One YouTube video → Reddit · LinkedIn · Instagram · TikTok · Twitter/X
-Anonymous brand mode ON · Platform-native formatting · Image briefs included
+AlgoQuant Content Multiplier v1.1 — Standalone SaaS
+FIXES: Streamlit State Management (Buttons no longer clear inputs/results)
+Features: One Video → Reddit · LinkedIn · Instagram · TikTok · Twitter/X
+Anonymous mode ON · Platform-native formatting · Image briefs + AI Images
 Single file. Deploy: streamlit run content_multiplier.py
 """
 
@@ -296,8 +297,7 @@ def get_model():
         return None
     genai.configure(api_key=key)
     # ✅ Using gemini-2.0-flash (current stable fast model)
-    # Note: gemini-3.1-flash-lite is not publicly available yet
-    return genai.GenerativeModel('gemini-3.1-flash-lite')
+    return genai.GenerativeModel('gemini-2.0-flash')
 
 def call_gemini(model, prompt, max_tokens=2000):
     for attempt in range(2):
@@ -376,17 +376,8 @@ Return ONLY valid JSON no markdown:
 {{"platform":"{platform}","dimensions":"{specs.get(platform,'').split(' ')[0]}","concept":"one sentence","background":"color with hex","main_text":"max 5 words","sub_text":"3 words or null","visual_element":"describe exactly","color_palette":["#hex1","#hex2","#hex3"],"layout":"step by step","canva_steps":"numbered steps under 15 min","ai_image_prompt":"prompt for Pollinations AI","predicted_engagement":"estimate"}}
 """, 800)
 
-def generate_image(prompt_text, platform):
-    try:
-        encoded = requests.utils.quote(prompt_text[:500])
-        w, h = ("1080","1080") if platform in ['instagram','tiktok'] else ("1280","720")
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width={w}&height={h}&nologo=true"
-        resp = requests.get(url, timeout=30)
-        if resp.status_code == 200:
-            return resp.content
-    except Exception:
-        pass
-    return None
+def section(title):
+    st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
 # MAIN PAGE (FIXED STATE MANAGEMENT)
@@ -413,7 +404,7 @@ def main():
     section("Your YouTube Video")
     col1, col2 = st.columns([2,1])
     with col1:
-        yt_title = st.text_input("Video title", value=st.session_state['cm_title'], placeholder="I Turned $10k Into $26k (Then Lost It All)", key="cm_title")
+        yt_title = st.text_input("Video title", value=st.session_state['cm_title'], placeholder="I Turned $10k Into $26k (Then Lost It All)", key="cm_title_input")
     with col2:
         recent = st.selectbox("Or pick recent", [
             "Select...",
@@ -427,7 +418,7 @@ def main():
             yt_title = recent
 
     yt_script = st.text_area("Paste script or description (first 500 words enough)", 
-        value=st.session_state['cm_script'], height=120, placeholder="Paste from Video Factory...", key="cm_script")
+        value=st.session_state['cm_script'], height=120, placeholder="Paste from Video Factory...", key="cm_script_input")
 
     section("Select Platforms")
     col_r,col_l,col_i,col_t,col_x = st.columns(5)
