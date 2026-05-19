@@ -1,9 +1,9 @@
 """
-AlgoQuant Content Multiplier v1.3 — Standalone SaaS
+AlgoQuant Content Multiplier v1.4 — Standalone SaaS
 FIXES: 
 - Streamlit State Management (Buttons no longer clear inputs/results)
-- HuggingFace Stable Diffusion XL integration (FREE high-quality images)
-- Pollinations AI fallback if HuggingFace fails
+- Pollinations AI integration (FREE, reliable, no API key)
+- Enhanced prompts for better image quality
 Features: One Video → Reddit · LinkedIn · Instagram · TikTok · Twitter/X
 Anonymous mode ON · Platform-native formatting · Image briefs + AI Images
 Single file. Deploy: streamlit run content_multiplier.py
@@ -299,7 +299,6 @@ def get_model():
     if not key:
         return None
     genai.configure(api_key=key)
-    # ✅ Using gemini-2.0-flash (current stable fast model)
     return genai.GenerativeModel('gemini-3.1-flash-lite')
 
 def call_gemini(model, prompt, max_tokens=2000):
@@ -383,48 +382,39 @@ def section(title):
     st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
-# IMAGE GENERATION (HUGGINGFACE STABLE DIFFUSION + FALLBACK)
+# IMAGE GENERATION (POLLINATIONS AI - FREE & RELIABLE)
 # ════════════════════════════════════════════════════════════
 
-def generate_image_huggingface(prompt_text, platform, width=1280, height=720):
-    """Generate high-quality image using HuggingFace Stable Diffusion (FREE)"""
+def generate_image_pollinations(prompt_text, platform, width=1280, height=720):
+    """Generate image using Pollinations AI (FREE, no API key, reliable)"""
     try:
-        API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+        # Enhanced prompt for better quality
+        enhanced_prompt = f"Professional financial trading chart, {prompt_text}, high quality, detailed, cinematic lighting, 4k, photorealistic, dark theme, modern fintech style"
         
-        # Enhanced prompt for better results
-        enhanced_prompt = f"Professional financial chart, {prompt_text}, high quality, detailed, 4k, photorealistic, dark theme, cinematic lighting"
+        encoded = requests.utils.quote(enhanced_prompt[:500])
+        w, h = (1080, 1080) if platform in ['instagram','tiktok'] else (width, height)
         
-        payload = {
-            "inputs": enhanced_prompt,
-            "parameters": {
-                "width": width,
-                "height": height,
-                "num_inference_steps": 30,
-                "guidance_scale": 7.5
-            }
-        }
+        # Use Pollinations AI - completely free, no auth needed
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width={w}&height={h}&nologo=true&seed={int(time.time())}"
         
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
-        
-        if response.status_code == 200:
-            return response.content
-        elif response.status_code == 503:
-            st.warning(" HuggingFace model is loading (first request takes ~30s). Please try again in 1 minute.")
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200:
+            return resp.content
         else:
-            st.warning(f"HuggingFace API error: {response.status_code}")
-            
-        return None
+            st.warning(f"Pollinations API error: {resp.status_code}")
+            return None
     except Exception as e:
-        st.warning(f"HuggingFace failed: {str(e)[:80]}")
+        st.warning(f"Pollinations failed: {str(e)[:80]}")
         return None
 
 def generate_image_fallback(prompt_text, platform):
-    """Fallback to Pollinations AI if HuggingFace fails"""
+    """Secondary fallback using simple prompt"""
     try:
-        encoded = requests.utils.quote(prompt_text[:500])
+        # Simplified prompt as last resort
+        simple_prompt = f"professional trading chart dark background {prompt_text[:100]}"
+        encoded = requests.utils.quote(simple_prompt)
         w, h = ("1080","1080") if platform in ['instagram','tiktok'] else ("1280","720")
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width={w}&height={h}&nologo=true"
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width={w}&height={h}"
         resp = requests.get(url, timeout=30)
         if resp.status_code == 200:
             return resp.content
@@ -579,14 +569,14 @@ def main():
                 if st.button(f"🎨  Generate Image (Free AI)", key=f"gen_btn_{platform}"):
                     img_prompt = ib.get('ai_image_prompt', f"professional trading dark background {st.session_state.get('cm_title')}")
                     
-                    with st.spinner("🎨 Generating high-quality image with Stable Diffusion..."):
-                        # Try HuggingFace Stable Diffusion first (FREE, high quality)
+                    with st.spinner("🎨 Generating image with AI..."):
+                        # Use Pollinations AI (FREE, reliable)
                         w, h = (1080, 1080) if platform in ['instagram','tiktok'] else (1280, 720)
-                        img_bytes = generate_image_huggingface(img_prompt, platform, w, h)
+                        img_bytes = generate_image_pollinations(img_prompt, platform, w, h)
                         
-                        # Fallback to Pollinations if HuggingFace fails
+                        # Fallback if primary fails
                         if not img_bytes:
-                            st.info("⚡ Using free AI fallback (Pollinations)...")
+                            st.info("⚡ Using fallback generator...")
                             img_bytes = generate_image_fallback(img_prompt, platform)
                         
                         if img_bytes:
