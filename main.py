@@ -1,9 +1,9 @@
 """
-AlgoQuant Content Multiplier v1.2 — Standalone SaaS
+AlgoQuant Content Multiplier v1.3 — Standalone SaaS
 FIXES: 
 - Streamlit State Management (Buttons no longer clear inputs/results)
-- Gemini Imagen integration for high-quality image generation
-- Fallback to Pollinations AI if Imagen unavailable
+- HuggingFace Stable Diffusion XL integration (FREE high-quality images)
+- Pollinations AI fallback if HuggingFace fails
 Features: One Video → Reddit · LinkedIn · Instagram · TikTok · Twitter/X
 Anonymous mode ON · Platform-native formatting · Image briefs + AI Images
 Single file. Deploy: streamlit run content_multiplier.py
@@ -376,56 +376,51 @@ Spec: {specs.get(platform,'')}
 Style: {style}
 
 Return ONLY valid JSON no markdown:
-{{"platform":"{platform}","dimensions":"{specs.get(platform,'').split(' ')[0]}","concept":"one sentence","background":"color with hex","main_text":"max 5 words","sub_text":"3 words or null","visual_element":"describe exactly","color_palette":["#hex1","#hex2","#hex3"],"layout":"step by step","canva_steps":"numbered steps under 15 min","ai_image_prompt":"prompt for Gemini Imagen or AI generator","predicted_engagement":"estimate"}}
+{{"platform":"{platform}","dimensions":"{specs.get(platform,'').split(' ')[0]}","concept":"one sentence","background":"color with hex","main_text":"max 5 words","sub_text":"3 words or null","visual_element":"describe exactly","color_palette":["#hex1","#hex2","#hex3"],"layout":"step by step","canva_steps":"numbered steps under 15 min","ai_image_prompt":"prompt for AI image generator","predicted_engagement":"estimate"}}
 """, 800)
 
 def section(title):
     st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
-# IMAGE GENERATION (GEMINI IMAGEN + FALLBACK)
+# IMAGE GENERATION (HUGGINGFACE STABLE DIFFUSION + FALLBACK)
 # ════════════════════════════════════════════════════════════
 
-def generate_image_with_gemini(prompt_text, platform, width=1280, height=720):
-    """Generate high-quality image using Gemini Imagen"""
+def generate_image_huggingface(prompt_text, platform, width=1280, height=720):
+    """Generate high-quality image using HuggingFace Stable Diffusion (FREE)"""
     try:
-        # Use Imagen model for image generation
-        # Try multiple model names as availability varies
-        model_names = [
-            "imagen-3.0-generate-001",
-            "imagen-2.0",
-            "imagegeneration@006"
-        ]
+        API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
         
-        for model_name in model_names:
-            try:
-                imagen_model = genai.ImageGenerationModel(model_name)
-                response = imagen_model.generate_images(
-                    prompt=prompt_text,
-                    number_of_images=1,
-                    aspect_ratio=f"{width}:{height}",
-                    safety_filter_level="block_some",
-                    person_generation="dont_allow"
-                )
-                
-                if response.images and len(response.images) > 0:
-                    # Get the first image as PIL Image
-                    pil_image = response.images[0]._pil_image
-                    if pil_image:
-                        img_byte_arr = io.BytesIO()
-                        pil_image.save(img_byte_arr, format='JPEG')
-                        return img_byte_arr.getvalue()
-            except Exception as e:
-                st.warning(f"Gemini Imagen ({model_name}) failed: {str(e)[:80]}")
-                continue
-                
+        # Enhanced prompt for better results
+        enhanced_prompt = f"Professional financial chart, {prompt_text}, high quality, detailed, 4k, photorealistic, dark theme, cinematic lighting"
+        
+        payload = {
+            "inputs": enhanced_prompt,
+            "parameters": {
+                "width": width,
+                "height": height,
+                "num_inference_steps": 30,
+                "guidance_scale": 7.5
+            }
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+        
+        if response.status_code == 200:
+            return response.content
+        elif response.status_code == 503:
+            st.warning(" HuggingFace model is loading (first request takes ~30s). Please try again in 1 minute.")
+        else:
+            st.warning(f"HuggingFace API error: {response.status_code}")
+            
         return None
     except Exception as e:
-        st.warning(f"Gemini Imagen error: {str(e)[:80]}")
+        st.warning(f"HuggingFace failed: {str(e)[:80]}")
         return None
 
 def generate_image_fallback(prompt_text, platform):
-    """Fallback to Pollinations AI if Gemini fails"""
+    """Fallback to Pollinations AI if HuggingFace fails"""
     try:
         encoded = requests.utils.quote(prompt_text[:500])
         w, h = ("1080","1080") if platform in ['instagram','tiktok'] else ("1280","720")
@@ -581,17 +576,17 @@ def main():
                     <div style='font-size:0.72rem;color:#9ca3af;line-height:1.6;'>{ib.get('canva_steps','')}</div>
                 </div>""", unsafe_allow_html=True)
 
-                if st.button(f"🎨  Generate Image (Gemini AI)", key=f"gen_btn_{platform}"):
+                if st.button(f"🎨  Generate Image (Free AI)", key=f"gen_btn_{platform}"):
                     img_prompt = ib.get('ai_image_prompt', f"professional trading dark background {st.session_state.get('cm_title')}")
                     
-                    with st.spinner("🎨 Generating high-quality image with Gemini Imagen..."):
-                        # Try Gemini Imagen first
+                    with st.spinner("🎨 Generating high-quality image with Stable Diffusion..."):
+                        # Try HuggingFace Stable Diffusion first (FREE, high quality)
                         w, h = (1080, 1080) if platform in ['instagram','tiktok'] else (1280, 720)
-                        img_bytes = generate_image_with_gemini(img_prompt, platform, w, h)
+                        img_bytes = generate_image_huggingface(img_prompt, platform, w, h)
                         
-                        # Fallback to Pollinations if Gemini fails
+                        # Fallback to Pollinations if HuggingFace fails
                         if not img_bytes:
-                            st.info("⚡ Gemini Imagen unavailable, using free AI fallback...")
+                            st.info("⚡ Using free AI fallback (Pollinations)...")
                             img_bytes = generate_image_fallback(img_prompt, platform)
                         
                         if img_bytes:
